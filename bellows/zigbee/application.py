@@ -107,6 +107,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         await self.add_endpoint(
             output_clusters=[zigpy.zcl.clusters.security.IasZone.cluster_id]
         )
+        self.add_listener(ExtendTimeoutListener(self._ezsp))
 
     async def add_endpoint(
         self,
@@ -289,6 +290,10 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             ieee, _ = t.EmberEUI64.deserialize(rest)
             LOGGER.info("ZDO Device announce: 0x%04x, %s", nwk, ieee)
             self.handle_join(nwk, ieee, 0)
+            try:
+                self.listener_event("device_announce", self.get_device(nwk=nwk))
+            except KeyError:
+                LOGGER.debug("No such device %s", nwk)
         try:
             device = self.get_device(nwk=sender)
         except KeyError:
@@ -475,11 +480,6 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             )
         with self._pending.new(message_tag) as req:
             async with self._in_flight_msg:
-                if expect_reply and device.node_desc.is_end_device in (True, None):
-                    LOGGER.debug(
-                        "Extending timeout for %s/0x%04x", device.ieee, device.nwk
-                    )
-                    await self._ezsp.setExtendedTimeout(device.ieee, True)
                 if self.use_source_routing and device.relays is not None:
                     res = await self._ezsp.setSourceRoute(device.nwk, device.relays)
                     if res[0] != t.EmberStatus.SUCCESS:
@@ -687,3 +687,32 @@ class EZSPCoordinator(CustomDevice):
         "model": "EZSP",
         "endpoints": {1: (EZSPEndpoint, {})},
     }
+
+
+class ExtendTimeoutListener:
+    def __init__(self, ezsp):
+        self._ezsp = ezsp
+
+    def node_descriptor_updated(self, device):
+        if self._is_sleepy_device(device):
+            asyncio.ensure_future(self._extend_timeout(device))
+
+    def device_announce(self, device):
+        if self._is_sleepy_device(device):
+            asyncio.ensure_future(self._extend_timeout(device))
+
+    def _is_sleepy_device(self, device):
+        sleepy = (
+            device.node_desc.is_valid
+            and device.node_desc.is_end_device in (True, None)
+            and not device.node_desc.is_receiver_on_when_idle
+        )
+        return sleepy
+
+    async def _extend_timeout(self, device):
+        LOGGER.debug(
+            "Extending timeout for %s/0x%04x - NodeDescriptorListener",
+            device.ieee,
+            device.nwk,
+        )
+        await self._ezsp.setExtendedTimeout(device.ieee, True)
