@@ -18,8 +18,26 @@ import zigpy.zdo.types as zdo_t
 
 APS_ACK_TIMEOUT = 120
 CONF_PARAM_SRC_RTG = "source_routing"
+CONF_PARM_SRC_RTE_TABLE_SIZE = "source_routing_table_size"
+CONF_ADDRESS_TABLE_SIZE = "address_table_size"
+CONF_NEIGHBOR_TABLE_SIZE = "neighbor_table_size"
+CONF_BROADCAST_TABLE_SIZE = "broadcast_table_size"
 CONFIG_SCHEMA = zigpy.application.CONFIG_SCHEMA.extend(
-    {vol.Optional(CONF_PARAM_SRC_RTG, default=False): bellows.zigbee.util.cv_boolean}
+    {
+        vol.Optional(CONF_PARAM_SRC_RTG, default=False): bellows.zigbee.util.cv_boolean,
+        vol.Optional(CONF_PARM_SRC_RTE_TABLE_SIZE, default=8): vol.All(
+            int, vol.Range(min=0, max=254)
+        ),
+        vol.Optional(CONF_ADDRESS_TABLE_SIZE, default=16): vol.All(
+            int, vol.Range(min=0, max=254)
+        ),
+        vol.Optional(CONF_NEIGHBOR_TABLE_SIZE, default=8): vol.All(
+            int, vol.Range(min=8, max=16)
+        ),
+        vol.Optional(CONF_BROADCAST_TABLE_SIZE, default=16): vol.All(
+            int, vol.Range(min=16, max=254)
+        ),
+    }
 )
 EZSP_DEFAULT_RADIUS = 0
 EZSP_MULTICAST_NON_MEMBER_RADIUS = 3
@@ -83,8 +101,12 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         await self._cfg(c.CONFIG_APPLICATION_ZDO_FLAGS, zdo)
         await self._cfg(c.CONFIG_PAN_ID_CONFLICT_REPORT_THRESHOLD, 2)
         await self._cfg(c.CONFIG_TRUST_CENTER_ADDRESS_CACHE_SIZE, 2)
-        await self._cfg(c.CONFIG_ADDRESS_TABLE_SIZE, 16)
-        await self._cfg(c.CONFIG_SOURCE_ROUTE_TABLE_SIZE, 8)
+        await self._cfg(
+            c.CONFIG_ADDRESS_TABLE_SIZE, self.config[CONF_ADDRESS_TABLE_SIZE]
+        )
+        await self._cfg(
+            c.CONFIG_SOURCE_ROUTE_TABLE_SIZE, self.config[CONF_PARM_SRC_RTE_TABLE_SIZE]
+        )
         await self._cfg(c.CONFIG_MAX_END_DEVICE_CHILDREN, 32)
         await self._cfg(c.CONFIG_INDIRECT_TRANSMISSION_TIMEOUT, 7680)
         await self._cfg(c.CONFIG_KEY_TABLE_SIZE, 4)
@@ -94,7 +116,13 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         else:
             await self._cfg(c.CONFIG_END_DEVICE_POLL_TIMEOUT, 60)
             await self._cfg(c.CONFIG_END_DEVICE_POLL_TIMEOUT_SHIFT, 8)
+        await self._cfg(
+            c.CONFIG_NEIGHBOR_TABLE_SIZE, self.config[CONF_NEIGHBOR_TABLE_SIZE]
+        )
         await self._cfg(c.CONFIG_MULTICAST_TABLE_SIZE, self.multicast.TABLE_SIZE)
+        await self._cfg(
+            c.CONFIG_BROADCAST_TABLE_SIZE, self.config[CONF_BROADCAST_TABLE_SIZE]
+        )
         await self._cfg(c.CONFIG_PACKET_BUFFER_COUNT, 0xFF)
 
         status, count = await e.getConfigurationValue(
