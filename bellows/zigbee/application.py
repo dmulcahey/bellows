@@ -32,6 +32,18 @@ WATCHDOG_WAKE_PERIOD = 10
 LOGGER = logging.getLogger(__name__)
 
 
+def periodic(period):
+    def scheduler(fcn):
+        async def wrapper(*args, **kwargs):
+            while True:
+                asyncio.create_task(fcn(*args, **kwargs))
+                await asyncio.sleep(period)
+
+        return wrapper
+
+    return scheduler
+
+
 class ControllerApplication(zigpy.application.ControllerApplication):
     direct = t.EmberOutgoingMessageType.OUTGOING_DIRECT
 
@@ -183,6 +195,15 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             LOGGER.warning(
                 "Couldn't set concentrator type %s: %s", self.use_source_routing, res
             )
+            return
+        if self.use_source_routing:
+            asyncio.ensure_future(self.send_mtorr())
+
+    @periodic(300)
+    async def send_mtorr(self, *args, **kwargs):
+        await self._ezsp.sendManyToOneRouteRequest(
+            t.EmberConcentratorType.HIGH_RAM_CONCENTRATOR, 0
+        )
 
     async def shutdown(self):
         """Shutdown and cleanup ControllerApplication."""
@@ -269,6 +290,8 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             self.handle_route_error(*args)
         elif frame_name == "_reset_controller_application":
             self._handle_reset_request(*args)
+        elif frame_name == "incomingManyToOneRouteRequestHandler":
+            self._handle_mtorr(*args)
 
     def _handle_frame(
         self,
@@ -631,6 +654,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         dev.relays = relays
 
     def handle_route_error(self, status: t.EmberStatus, nwk: t.EmberNodeId) -> None:
+        # why not just issue a discovery here???
         LOGGER.debug("Processing route error: status=%s, nwk=%s", status, nwk)
         try:
             dev = self.get_device(nwk=nwk)
@@ -638,6 +662,10 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             LOGGER.debug("No %s device found", nwk)
             return
         dev.relays = None
+
+    def _handle_mtorr(self, nwk, ieee, route_cost):
+        # not sure what to do with this yet...
+        LOGGER.debug("MTORR nwk=0x%04x, IEEE=%s route_cost=%s ", nwk, ieee, route_cost)
 
 
 class EZSPCoordinator(CustomDevice):
