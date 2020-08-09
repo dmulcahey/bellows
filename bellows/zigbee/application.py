@@ -643,7 +643,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             await self._ezsp.sendManyToOneRouteRequest(
                 t.EmberConcentratorType.HIGH_RAM_CONCENTRATOR, EZSP_DEFAULT_RADIUS
             )
-            await asyncio.sleep(600)
+            await asyncio.sleep(1800)
 
     async def _watchdog(self):
         """Watchdog handler."""
