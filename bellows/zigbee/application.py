@@ -48,6 +48,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         self._multicast = None
         self._pending = zigpy.util.Requests()
         self._watchdog_task = None
+        self._mtorr_task = None
         self._reset_task = None
         self._in_flight_msg = None
         self._tx_options = (
@@ -187,6 +188,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             LOGGER.warning(
                 "Couldn't set concentrator type %s: %s", self.use_source_routing, res
             )
+        self._mtorr_task = asyncio.ensure_future(self._sendMTORR())
 
     async def shutdown(self):
         """Shutdown and cleanup ControllerApplication."""
@@ -197,6 +199,8 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             self._watchdog_task.cancel()
         if self._reset_task and not self._reset_task.done():
             self._reset_task.cancel()
+        if self._mtorr_task and not self._mtorr_task.done():
+            self._mtorr_task.cancel()
         self._ezsp.close()
 
     async def form_network(self):
@@ -506,9 +510,12 @@ class ControllerApplication(zigpy.application.ControllerApplication):
                                     res,
                                 )
                             else:
-                                aps_frame.options ^= (
-                                    t.EmberApsOption.APS_OPTION_ENABLE_ROUTE_DISCOVERY
+                                """
+                                aps_frame.options = t.EmberApsOption(
+                                    aps_frame.options
+                                    ^ t.EmberApsOption.APS_OPTION_ENABLE_ROUTE_DISCOVERY
                                 )
+                                """
                                 LOGGER.debug(
                                     "Set source route for %s to %s: %s",
                                     device.nwk,
@@ -629,6 +636,14 @@ class ControllerApplication(zigpy.application.ControllerApplication):
                 # Wait for messageSentHandler message
                 res = await asyncio.wait_for(req.result, timeout=APS_ACK_TIMEOUT)
         return res
+
+    async def _sendMTORR(self):
+        while True:
+            LOGGER.info("Sending many to one route request across the network")
+            await self._ezsp.sendManyToOneRouteRequest(
+                t.EmberConcentratorType.HIGH_RAM_CONCENTRATOR, EZSP_DEFAULT_RADIUS
+            )
+            await asyncio.sleep(600)
 
     async def _watchdog(self):
         """Watchdog handler."""
