@@ -89,11 +89,16 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         self._watchdog_feed_counter = 0
 
         self._req_lock = asyncio.Lock()
+        self._send_sequence = 0
 
     @property
     def controller_event(self):
         """Return asyncio.Event for controller app."""
         return self._ctrl_event
+
+    def get_sequence(self) -> t.uint8_t:
+        self._send_sequence = (self._send_sequence + 1) % 256
+        return self._send_sequence
 
     @property
     def is_controller_running(self):
@@ -681,7 +686,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
         message_type: t.EmberIncomingMessageType,
         destination: t.EmberNodeId,
         aps_frame: t.EmberApsFrame,
-        tsn: int,
+        message_tag: int,
         status: t.EmberStatus,
         message: bytes,
     ):
@@ -711,11 +716,6 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             cnt_name = f"unknown_msg_type_{msg}"
 
         try:
-            addr = zigpy.types.AddrModeAddress(
-                addr_mode=zigpy.types.AddrMode.NWK,
-                address=destination,
-            )
-            message_tag = f"{tsn}_{addr.address}"
             request = self._pending[message_tag]
             request.result.set_result((status, f"message send {msg}"))
             self.state.counters[COUNTERS_CTRL][cnt_name].increment()
@@ -854,7 +854,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             aps_frame.options |= t.EmberApsOption.APS_OPTION_ENABLE_ROUTE_DISCOVERY
 
         async with self._limit_concurrency():
-            message_tag = f"{packet.tsn}_{packet.dst.address}"
+            message_tag = f"{self.get_sequence()}_{packet.dst.address}"
             with self._pending.new(message_tag) as req:
                 for attempt, retry_delay in enumerate(RETRY_DELAYS):
                     async with self._req_lock:
@@ -876,7 +876,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
                                 t.EmberOutgoingMessageType.OUTGOING_DIRECT,
                                 t.EmberNodeId(packet.dst.address),
                                 aps_frame,
-                                packet.tsn,
+                                message_tag,
                                 packet.data.serialize(),
                             )
                         elif packet.dst.addr_mode == zigpy.types.AddrMode.Group:
@@ -884,7 +884,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
                                 aps_frame,
                                 packet.radius,
                                 packet.non_member_radius,
-                                packet.tsn,
+                                message_tag,
                                 packet.data.serialize(),
                             )
                         elif packet.dst.addr_mode == zigpy.types.AddrMode.Broadcast:
@@ -892,7 +892,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
                                 t.EmberNodeId(packet.dst.address),
                                 aps_frame,
                                 packet.radius,
-                                packet.tsn,
+                                message_tag,
                                 packet.data.serialize(),
                             )
 
