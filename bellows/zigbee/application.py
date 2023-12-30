@@ -716,14 +716,19 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             cnt_name = f"unknown_msg_type_{msg}"
 
         try:
-            request = self._pending[message_tag]
+            addr = zigpy.types.AddrModeAddress(
+                addr_mode=zigpy.types.AddrMode.NWK,
+                address=destination,
+            )
+            tag = f"{addr.address}_{message_tag}"
+            request = self._pending[tag]
             request.result.set_result((status, f"message send {msg}"))
             self.state.counters[COUNTERS_CTRL][cnt_name].increment()
         except KeyError:
             self.state.counters[COUNTERS_CTRL][f"{cnt_name}_unexpected"].increment()
             LOGGER.error(
                 "Unexpected message send notification tag: %s - pending: %s",
-                message_tag,
+                tag,
                 set(self._pending),
             )
         except asyncio.InvalidStateError as exc:
@@ -733,7 +738,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
                     "Invalid state on future for message tag %s "
                     "- probably duplicate response: %s"
                 ),
-                message_tag,
+                tag,
                 exc,
             )
 
@@ -854,8 +859,8 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             aps_frame.options |= t.EmberApsOption.APS_OPTION_ENABLE_ROUTE_DISCOVERY
 
         async with self._limit_concurrency():
-            message_tag = f"{self.get_sequence()}_{packet.dst.address}"
-            with self._pending.new(message_tag) as req:
+            message_tag = self.get_sequence()
+            with self._pending.new(f"{packet.dst.address}_{message_tag}") as req:
                 for attempt, retry_delay in enumerate(RETRY_DELAYS):
                     async with self._req_lock:
                         if packet.dst.addr_mode == zigpy.types.AddrMode.NWK:
