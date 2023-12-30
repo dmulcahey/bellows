@@ -721,7 +721,7 @@ class ControllerApplication(zigpy.application.ControllerApplication):
             self.state.counters[COUNTERS_CTRL][cnt_name].increment()
         except KeyError:
             self.state.counters[COUNTERS_CTRL][f"{cnt_name}_unexpected"].increment()
-            LOGGER.debug(
+            LOGGER.error(
                 "Unexpected message send notification tag: %s - pending: %s",
                 message_tag,
                 set(self._pending),
